@@ -13,7 +13,7 @@ import os
 from analysis.components.pull_db_data import PullDBData
 from common.db_utils_pandas import DbUtils
 from common.constants import ExchangeName
-from order_management_service.Utils.orders_db_const import ORDERS_DB_COL_TYPE_MAPPING
+from order_management_service.Utils.orders_db_const import ORDERS_DB_COL_TYPE_MAPPING,OrderInfo
 
 # From matplotlib, Figure is the top-level container for all the plot elements.
 from matplotlib.figure import Figure
@@ -82,6 +82,7 @@ class Results:
     max_short_position: float
     largest_position: float
     position_type: str
+    exec_rate: float
 
     def to_dict(self) -> dict:
         """Converts the results to a dictionary."""
@@ -101,6 +102,8 @@ class Results:
             f"## Trade Analysis from {self.start_datetime_str} GMT+8 onwards\n\n"
             f"## Earliest Trade Time Found: {self.earliest_trade_time}\n\n"
             f"## Last Trade Time Found: {self.last_trade_time}\n\n"
+            f"**Execution Rate:**\n"
+            f"* Execution Rate: {self.exec_rate:.2%}\n\n"
             f"**Profit and Loss (PnL):**\n"
             f"* Simplified PnL: {self.pnl:,.4f} USDT\n\n"
             f"**Trade Counts:**\n"
@@ -155,11 +158,11 @@ class TradesAnalysis:
 
             # --- Data Preparation and Column Mapping ---
             df.rename(columns={
-                'createdAt': TradeData.TIME.value,
-                'side': TradeData.ORDER_SIDE.value,
-                'executed_size': TradeData.QUANTITY.value,
-                'symbol': TradeData.SYMBOL.value,
-                'price': TradeData.PRICE.value
+                OrderInfo.CREATED_AT: TradeData.TIME.value,
+                OrderInfo.SIDE: TradeData.ORDER_SIDE.value,
+                OrderInfo.EXECUTED_SIZE: TradeData.QUANTITY.value,
+                OrderInfo.SYMBOL: TradeData.SYMBOL.value,
+                OrderInfo.PRICE: TradeData.PRICE.value
             }, inplace=True)
             
             for to_float_col in [TradeData.QUANTITY.value, TradeData.PRICE.value]:
@@ -240,6 +243,14 @@ class TradesAnalysis:
             start_datetime_gmt8 = pd.to_datetime(timestamp, unit='us', utc=True).tz_convert(gmt8) if timestamp else self.filtered_trades[TradeData.DATETIME_GMT8.value].iloc[0]
 
             # --- Calculations ---
+            exec_rate = 0.0
+            if df is not None and not df.empty:
+                num_total_orders = len(df)
+                executed_sizes = pd.to_numeric(df[TradeData.QUANTITY.value].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                num_executed_orders = (executed_sizes > 0).sum()
+                if num_total_orders > 0:
+                    exec_rate = num_executed_orders / num_total_orders
+
             buy_trades = self.filtered_trades[self.filtered_trades[TradeData.ORDER_SIDE.value] == 'BUY']
             sell_trades = self.filtered_trades[self.filtered_trades[TradeData.ORDER_SIDE.value] == 'SELL']
             total_buy_size = buy_trades[TradeData.QUANTITY.value].sum()
@@ -265,11 +276,27 @@ class TradesAnalysis:
                 start_time = self.filtered_trades[TradeData.TIME.value].iloc[0]
                 end_time = self.filtered_trades[TradeData.TIME.value].iloc[-1]
 
+                if df is not None and not df.empty:
+                    df.sort_values(by=TradeData.TIME.value, inplace=True)
+
                 current_time = start_time
                 cumulative_pnl = 0
                 while current_time < end_time:
                     period_end_time = current_time + rolling_period
                     period_df = self.filtered_trades[(self.filtered_trades[TradeData.TIME.value] >= current_time) & (self.filtered_trades[TradeData.TIME.value] < period_end_time)]
+
+                    num_orders_sent_period = 0
+                    period_orders_df = pd.DataFrame()
+                    if df is not None and not df.empty:
+                        period_orders_df = df[(df[TradeData.TIME.value] >= current_time) & (df[TradeData.TIME.value] < period_end_time)]
+                        num_orders_sent_period = len(period_orders_df)
+
+                    exec_rate_period = 0.0
+                    if not period_orders_df.empty:
+                        executed_sizes_period = pd.to_numeric(period_orders_df[TradeData.QUANTITY.value].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                        num_executed_orders_period = (executed_sizes_period > 0).sum()
+                        if num_orders_sent_period > 0:
+                            exec_rate_period = num_executed_orders_period / num_orders_sent_period
 
                     if not period_df.empty:
                         buy_trades_period = period_df[period_df[TradeData.ORDER_SIDE.value] == 'BUY']
@@ -311,7 +338,8 @@ class TradesAnalysis:
                             num_sell_trades=num_sell_trades_period,
                             lowest_size=lowest_size,
                             largest_size=largest_size,
-                            avg_size=avg_size
+                            avg_size=avg_size,
+                            exec_rate=exec_rate_period
                         )
 
                     current_time = period_end_time
@@ -338,6 +366,7 @@ class TradesAnalysis:
                 max_short_position=max_short_position,
                 largest_position=largest_position,
                 position_type=position_type,
+                exec_rate=exec_rate,
                 global_symbol=symbol_val,
                 exchange_symbol=symbol_val,
                 exchange=exchange_val,
