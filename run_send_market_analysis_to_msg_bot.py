@@ -2,6 +2,7 @@ import os
 import yaml
 import asyncio
 import json
+from pathlib import Path
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Tuple
@@ -103,7 +104,7 @@ def format_stats_for_message(stats_df: pd.DataFrame) -> str:
 
 async def main():
     """Main function to run the analysis and send reports."""
-    settings_path = "/Users/jinshidiannao/Documents/asset_management/analysis/send_to_lark_settings.yaml"
+    settings_path = "./send_to_lark_settings.yaml"
 
     try:
         settings = load_settings(settings_path).get("market_stats", {})
@@ -122,8 +123,9 @@ async def main():
         return
 
     msg_bot = MsgBot(**msg_bot_settings)
-
-    db_json_path = os.path.join(os.path.dirname(__file__), '..', 'common', 'db.json')
+    db_json_path = str(Path(__file__).parent.parent/"common/db.json")
+    # db_json_path = os.path.join(os.path.dirname(__file__), '..', 'common', 'db.json')
+    breakpoint()
     try:
         with open(db_json_path) as f:
             db_info = json.load(f)['DEFAULT']['Trading']

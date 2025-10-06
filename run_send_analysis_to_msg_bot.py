@@ -189,7 +189,7 @@ async def load_strategy_helper_async(conf_fp: str = None, logger=None) -> Symbol
 
 async def main():
     """Main function to run the analysis and send reports."""
-    settings_path = "/Users/jinshidiannao/Documents/asset_management/analysis/send_to_lark_settings.yaml"
+    settings_path = "./send_to_lark_settings.yaml"
     
     try:
         settings = load_settings(settings_path).get("private",{})
@@ -211,7 +211,7 @@ async def main():
     msg_bot = MsgBot(**msg_bot_settings)
     send_message = msg_bot.send_msg
 
-    db_json_path = os.path.join(os.path.dirname(__file__), '..', 'common', 'db.json')
+    db_json_path = str(Path(__file__).parent.parent/"common/db.json")
     try:
         with open(db_json_path) as f:
             db_info = json.load(f)['DEFAULT']['Trading']
