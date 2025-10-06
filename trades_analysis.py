@@ -72,6 +72,9 @@ class Results:
     first_trade_price: float
     last_trade_price: float
     pnl: float
+    turnover: float
+    executed_buys: int
+    executed_sells: int
     num_buy_trades: int
     num_sell_trades: int
     total_buy_size: float
@@ -105,7 +108,8 @@ class Results:
             f"**Execution Rate:**\n"
             f"* Execution Rate: {self.exec_rate:.2%}\n\n"
             f"**Profit and Loss (PnL):**\n"
-            f"* Simplified PnL: {self.pnl:,.4f} USDT\n\n"
+            f"* Simplified PnL: {self.pnl:,.4f} USDT\n"
+            f"* Turnover: {self.turnover:,.4f} USDT\n\n"
             f"**Trade Counts:**\n"
             f"* Number of Buy Trades:  {self.num_buy_trades}\n"
             f"* Number of Sell Trades: {self.num_sell_trades}\n\n"
@@ -123,6 +127,33 @@ class Results:
             f"* Overall Largest Position:    {self.largest_position:,.6f} ({self.position_type})\n\n"
             f"--- Methods Available ---\n"
             f" .to_dict(), .to_json(), .to_df()"
+        )
+        return report
+
+    def to_msg_bot_msg(self) -> str:
+        """Creates a nicely formatted string for sending analysis results to a message bot."""
+        report = (
+            f"## Trade Analysis for {self.exchange_symbol} on {self.exchange}\n"
+            f"Analysis from **{self.start_datetime_str} GMT+8** onwards.\n\n"
+            f"**Period Analyzed:**\n"
+            f"- Earliest Trade: {self.earliest_trade_time}\n"
+            f"- Last Trade: {self.last_trade_time}\n\n"
+            f"**Execution & PnL:**\n"
+            f"- **Execution Rate:** {self.exec_rate:.2%}\n"
+            f"- **Simplified PnL:** {self.pnl:,.4f} USDT\n"
+            f"- **Turnover:** {self.turnover:,.4f} USDT\n\n"
+            f"**Trade Summary:**\n"
+            f"- **Buy Trades:** {self.num_buy_trades} (Total Size: {self.total_buy_size:,.6f})\n"
+            f"- **Sell Trades:** {self.num_sell_trades} (Total Size: {self.total_sell_size:,.6f})\n\n"
+            f"**Price Points:**\n"
+            f"- **First Trade Price:** {self.first_trade_price:,.4f} USDT\n"
+            f"- **Last Trade Price:** {self.last_trade_price:,.4f} USDT\n"
+            f"- **Avg. Buy Price:** {self.avg_weighted_buy_price:,.4f} USDT\n"
+            f"- **Avg. Sell Price:** {self.avg_weighted_sell_price:,.4f} USDT\n\n"
+            f"**Position Highlights:**\n"
+            f"- **Max Long Position:** {self.max_long_position:,.6f}\n"
+            f"- **Max Short Position:** {self.max_short_position:,.6f}\n"
+            f"- **Largest Position:** {self.largest_position:,.6f} ({self.position_type})\n"
         )
         return report
 
@@ -216,7 +247,8 @@ class TradesAnalysis:
 
         return min(buy_volume, sell_volume) * (weighted_avg_sell_price - weighted_avg_buy_price)
 
-    def run_analysis(self, df: pd.DataFrame, symbol: Optional[str] = None, timestamp: Optional[int] = None, exchange: Optional[ExchangeName] = None, rolling_period: int = 3600000000) -> Tuple[Optional[Results], Optional[pd.DataFrame]]:
+    def run_analysis(self, df: pd.DataFrame, symbol: Optional[str] = None, timestamp: Optional[int] = None, exchange: Optional[ExchangeName] = None, rolling_period: int = 3600000000,
+                    gen_chart:bool=False) -> Tuple[Optional[Results], Optional[pd.DataFrame]]:
         """
         Runs the full trade analysis and chart generation process on a given DataFrame.
 
@@ -253,6 +285,10 @@ class TradesAnalysis:
 
             buy_trades = self.filtered_trades[self.filtered_trades[TradeData.ORDER_SIDE.value] == 'BUY']
             sell_trades = self.filtered_trades[self.filtered_trades[TradeData.ORDER_SIDE.value] == 'SELL']
+            
+            executed_buys = (buy_trades[TradeData.QUANTITY.value] > 0).sum()
+            executed_sells = (sell_trades[TradeData.QUANTITY.value] > 0).sum()
+            
             total_buy_size = buy_trades[TradeData.QUANTITY.value].sum()
             total_sell_size = sell_trades[TradeData.QUANTITY.value].sum()
             total_buy_quote_qty = buy_trades[TradeData.QUOTE_QTY.value].sum()
@@ -356,6 +392,9 @@ class TradesAnalysis:
                 first_trade_price=self.filtered_trades[TradeData.PRICE.value].iloc[0],
                 last_trade_price=self.filtered_trades[TradeData.PRICE.value].iloc[-1],
                 pnl=pnl,
+                turnover=turnover_value,
+                executed_buys=executed_buys,
+                executed_sells=executed_sells,
                 num_buy_trades=len(buy_trades),
                 num_sell_trades=len(sell_trades),
                 total_buy_size=total_buy_size,
@@ -374,7 +413,8 @@ class TradesAnalysis:
             )
 
             # --- Chart Generation ---
-            self._generate_chart()
+            if gen_chart:
+                self._generate_chart()
             
             return self.result, self.filtered_trades
 
@@ -466,7 +506,7 @@ if __name__ == '__main__':
         )
         db_utils.start()
         puller = PullDBData(db_utils)
-        analyzer = TradesAnalysis(pull_db_data=puller)
+        analyzer = TradesAnalysis()
 
     except (FileNotFoundError, KeyError) as e:
         print(f"Skipping test: db.json not found or configured incorrectly: {e}")
@@ -537,3 +577,4 @@ if __name__ == '__main__':
 
     if db_utils:
         db_utils.close()
+

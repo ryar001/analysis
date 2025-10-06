@@ -1,0 +1,5 @@
+logging:
+  log_dir: "../Logs"
+  log_name_format: "dashboard_%d-%m-%y.log"
+  log_level: "INFO"
+  print_output: True

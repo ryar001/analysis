@@ -1,0 +1,15 @@
+Keith Strategies
+    strategy_name: STRATEGY_NAME1
+    process_name: PROCESS_NAME1
+
+    Strategy Account Analysis Result:
+    {INSERT_ANALYSIS_RESULT}
+    
+    
+    strategy_name: STRATEGY_NAME2
+    process_name: PROCESS_NAME2
+
+    Strategy Account Analysis Result:
+    {INSERT_ANALYSIS_RESULT}
+
+{NEXT_ACCOUNT_ANALYSIS_RESULT}

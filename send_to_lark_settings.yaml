@@ -1,0 +1,69 @@
+# send_to_lark_settings.yaml
+# accounts
+# TODO when list get high, may need transfer this setting to a db or a csv file
+private:
+  table_name: strategy_stats
+  accounts:
+    Jackson:
+      strategy_and_process_name:
+        - strategy_name: FX-RPL/USDT_AS_strategy
+          process_name: AS_strategy
+        - strategy_name: FX-TRUMP/USDT_AS_strategy
+          process_name: AS_strategy
+        - strategy_name: FX-USDC/USDT_AS_strategy
+          process_name: AS_strategy
+    Keith:
+      strategy_and_process_name:
+        - strategy_name: XT_mm_spot
+        - strategy_name: XT_mm_future
+
+  # Logging Configuration: Defines settings for logging.
+  log_setting:
+    log_level: DEBUG # Minimum logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL).
+    log_format: '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s' # Format string for log messages.
+    logwhen: 'D' # When to rotate log files (e.g., 'D' for daily).
+    log_dir: "./Logs" # Directory for log files.
+    log_file: ".log" # Name of the log file.
+
+  # msg bot seting, for now using lark, ideally change to MQ or Kafka
+  msg_bot_settings:
+    bot_name: lark
+    chat_id: 480d8947-1ba2-4645-bf42-b0aaea9ef1b0
+    api_name: bot/v2/hook/
+    url: https://open.larksuite.com/open-apis/
+    title: Account {account_name}
+    msg_type: post
+    heartbeat_msg: "Account {account_name} is alive and kicking!"
+    warning_msg: "No message received {account_name} for a long time" # msg to send when no msg received for max_no_msg_time
+
+# send_to_lark_settings.yaml
+# accounts
+market_stats:
+  table_name: mds_stats
+  markets:
+    Jackson:
+      strategy_and_process_name:
+        - symbol: FX-RPL/USDT
+          exchange: XT_FX
+        - symbol: FX-TRUMP/USDT
+          exchange: XT_FX
+
+  # Logging Configuration: Defines settings for logging.
+  log_setting:
+    log_level: DEBUG # Minimum logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL).
+    log_format: '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s' # Format string for log messages.
+    logwhen: 'D' # When to rotate log files (e.g., 'D' for daily).
+    log_dir: "./Logs" # Directory for log files.
+    log_file: ".log" # Name of the log file.
+
+  # msg bot seting, for now using lark, ideally change to MQ or Kafka
+  msg_bot_settings:
+    bot_name: lark
+    chat_id: 480d8947-1ba2-4645-bf42-b0aaea9ef1b0
+    api_name: bot/v2/hook/
+    url: https://open.larksuite.com/open-apis/
+    title: Market {symbol}@{exchange}
+    msg_type: post
+    heartbeat_msg: "Account {symbol}@{exchange} is alive and kicking!"
+    warning_msg: "No message received {symbol}@{exchange} for a long time" # msg to send when no msg received for max_no_msg_time
+
