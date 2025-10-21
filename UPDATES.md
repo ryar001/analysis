@@ -1,3 +1,5 @@
+Please provide the git diff output. The variable `${DIFF}` was not expanded.
+
 ## 2025-10-21
 
 ### Refactor

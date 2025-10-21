@@ -138,6 +138,7 @@ class TradesAnalysis:
         max_no_trade_time = 0
 
         last_trade_time = None
+
         for i,row in df.iterrows():
             if last_trade_time is None:
                 last_trade_time = row.market_last_trade_timestamp
