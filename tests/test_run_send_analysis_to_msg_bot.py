@@ -118,7 +118,7 @@ private:
     })
     
     analysis_result = Results(
-        start_datetime_str='2023-01-01 00:00:00',
+        start_datetime_utc='2023-01-01 00:00:00',
         earliest_trade_time='2023-01-01 10:00:00',
         last_trade_time='2023-01-01 10:05:00',
         global_symbol='BTC/USDT',
@@ -221,7 +221,7 @@ private:
     
     analysis_result = Results(
         pnl=50.0, turnover=3050.0, total_buy_size=2.0,
-        start_datetime_str='2023-02-01 00:00:00', earliest_trade_time='2023-02-01 10:00:00',
+        start_datetime_utc='2023-02-01 00:00:00', earliest_trade_time='2023-02-01 10:00:00',
         last_trade_time='2023-02-01 10:05:00', global_symbol='ETH/USDT', exchange_symbol='ETH/USDT',
         exchange='XT_FX', product_type='spot', first_trade_price=1500.0, last_trade_price=1550.0,
         executed_buys=1, executed_sells=0, num_buy_trades=1, num_sell_trades=0,
@@ -306,7 +306,7 @@ private:
     
     analysis_result = Results(
         pnl=50.0, turnover=3050.0, total_buy_size=2.0,
-        start_datetime_str='2023-02-01 00:00:00', earliest_trade_time='2023-02-01 10:00:00',
+        start_datetime_utc='2023-02-01 00:00:00', earliest_trade_time='2023-02-01 10:00:00',
         last_trade_time='2023-02-01 10:05:00', global_symbol='ETH/USDT', exchange_symbol='ETH/USDT',
         exchange='XT_FX', product_type='spot', first_trade_price=1500.0, last_trade_price=1550.0,
         executed_buys=1, executed_sells=0, num_buy_trades=1, num_sell_trades=0,

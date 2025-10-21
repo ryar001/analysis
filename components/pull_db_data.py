@@ -15,12 +15,12 @@ class PullDBData:
         """
         self.db_utils = db_utils
 
-    def get_orders(self, symbol: Optional[str] = None, timestamp: Optional[int] = None, to_timestamp: Optional[int] = None, exchange: Optional[ExchangeName] = None, strategy_name: Optional[str] = None, strategy_process_name: Optional[str] = None, limit: Optional[int] = None) -> pd.DataFrame:
+    def get_orders(self,timestamp: Optional[int] = None,to_timestamp: Optional[int] = None,limit:Optional[int]=1000000,**kwargs) -> pd.DataFrame:
         """
         Gets orders from the database.
 
         Args:
-            symbol (str, optional): The symbol to filter by. Defaults to None.
+            global_symbol (str, optional): The symbol to filter by. Defaults to None.
             timestamp (int, optional): The timestamp to filter by (in milliseconds). Defaults to None.
             to_timestamp (int, optional): The end timestamp to filter by (in milliseconds). Defaults to None.
             exchange (ExchangeName, optional): The exchange to filter by. Defaults to None.
@@ -33,38 +33,32 @@ class PullDBData:
         """
         where_clauses = []
         params = {}
+        self.db_utils.last_update_time_key = self.db_utils.last_update_time_key or 'timestamp'
+        for key, value in kwargs.items():
+            if value is not None and key in self.db_utils.db_col_type_mapping:
+                where_clauses.append(f'"{key}" = :{key}')
+                params[key] = value
 
-        if symbol:
-            where_clauses.append('"symbol" = :symbol')
-            params['symbol'] = symbol
-        if exchange:
-            where_clauses.append('"exchange" = :exchange')
-            params['exchange'] = exchange.value
-        if timestamp:
-            # Assuming the timestamp column is named 'createdAt' and is a BIGINT or similar numeric type
-            where_clauses.append('"createdAt" >= :timestamp')
-            params['timestamp'] = timestamp
-        if to_timestamp:
-            where_clauses.append('"createdAt" < :to_timestamp')
+        #filter by timestamp
+        if timestamp is not None:
+            where_clauses.append(f'"{self.db_utils.last_update_time_key}" >= :timestamp')
+            params[self.db_utils.last_update_time_key] = timestamp
+        if to_timestamp is not None:
+            where_clauses.append(f'"{self.db_utils.last_update_time_key}" < :to_timestamp')
             params['to_timestamp'] = to_timestamp
-        if strategy_name:
-            where_clauses.append('"strategy_name" = :strategy_name')
-            params['strategy_name'] = strategy_name
-        if strategy_process_name:
-            where_clauses.append('"strategy_process_name" = :strategy_process_name')
-            params['strategy_process_name'] = strategy_process_name
-
+        
         where_clause = " AND ".join(where_clauses) if where_clauses else None
-
         original_time_key = self.db_utils.last_update_time_key
         try:
-            if limit is not None:
-                self.db_utils.last_update_time_key = 'createdAt'
+            
             df = self.db_utils.get_table_as_df(where_clause=where_clause, params=params, limit=limit)
+            # df = df[df[self.db_utils.last_update_time_key] >= timestamp]
+            # df = df[df[self.db_utils.last_update_time_key] < to_timestamp]
         finally:
             self.db_utils.last_update_time_key = original_time_key
             
         return df
+    
 
 if __name__ == '__main__':
     import json
@@ -121,7 +115,7 @@ if __name__ == '__main__':
         # dbu.delete_table()
         dbu.init_tables()
         puller = PullDBData(dbu)
-        df = puller.get_orders(symbol="FX-TRUMP/USDT")
+        df = puller.get_orders(global_symbol="FX-TRUMP/USDT")
         breakpoint()
         return
         # Test Data

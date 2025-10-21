@@ -8,15 +8,20 @@ import json
 from typing import Tuple, Optional, List, Dict, Any
 from enum import Enum
 import os
+from common.constants import SymbolType
+from uuid import NAMESPACE_DNS, uuid5
+
 
 # Imports for database integration
 from analysis.components.pull_db_data import PullDBData
 from common.db_utils_pandas import DbUtils
 from common.constants import ExchangeName
-from order_management_service.Utils.orders_db_const import ORDERS_DB_COL_TYPE_MAPPING,OrderInfo
+from order_management_service.Utils.orders_db_const import ORDERS_DB_COL_TYPE_MAPPING
+from analysis.components.models.order_stats_cols import OrderStatsCols, RESULTS_TO_LARK_MAPPINGS, Results, NAMESPACE_ID
 
 # From matplotlib, Figure is the top-level container for all the plot elements.
 from matplotlib.figure import Figure
+
 
 class TradeData(Enum):
     TIME = 'time'
@@ -59,112 +64,6 @@ class RollingStats:
         """Converts the results to a JSON string."""
         return json.dumps(self.to_dict(), indent=indent)
 
-@dataclass
-class Results:
-    """A dataclass to hold the results of the trade analysis."""
-    start_datetime_str: str
-    earliest_trade_time: str
-    last_trade_time: str
-    global_symbol: str
-    exchange_symbol: str
-    exchange: str
-    product_type: str
-    first_trade_price: float
-    last_trade_price: float
-    pnl: float
-    turnover: float
-    executed_buys: int
-    executed_sells: int
-    num_buy_trades: int
-    num_sell_trades: int
-    total_buy_size: float
-    total_sell_size: float
-    avg_weighted_buy_price: float
-    avg_weighted_sell_price: float
-    max_long_position: float
-    max_short_position: float
-    largest_position: float
-    position_type: str
-    exec_rate: float
-
-    def to_dict(self) -> dict:
-        """Converts the results to a dictionary."""
-        return asdict(self)
-
-    def to_json(self, indent: int = 4) -> str:
-        """Converts the results to a JSON string."""
-        return json.dumps(self.to_dict(), indent=indent)
-
-    def to_df(self) -> pd.DataFrame:
-        """Converts the results to a pandas DataFrame."""
-        return pd.DataFrame([self.to_dict()])
-
-    def __str__(self) -> str:
-        """Provides a user-friendly, multi-line string representation of the results."""
-        report = (
-            f"## Trade Analysis from {self.start_datetime_str} GMT+8 onwards\n\n"
-            f"## Earliest Trade Time Found: {self.earliest_trade_time}\n\n"
-            f"## Last Trade Time Found: {self.last_trade_time}\n\n"
-            f"**Execution Rate:**\n"
-            f"* Execution Rate: {self.exec_rate:.2%}\n\n"
-            f"**Profit and Loss (PnL):**\n"
-            f"* Simplified PnL: {self.pnl:,.4f} USDT\n"
-            f"* Turnover: {self.turnover:,.4f} USDT\n\n"
-            f"**Trade Counts:**\n"
-            f"* Number of Buy Trades:  {self.num_buy_trades}\n"
-            f"* Number of Sell Trades: {self.num_sell_trades}\n\n"
-            f"**Volume Analysis:**\n"
-            f"* Total Buy Size:  {self.total_buy_size:,.6f}\n"
-            f"* Total Sell Size: {self.total_sell_size:,.6f}\n\n"
-            f"**Price Analysis:**\n"
-            f"* First Trade Price: {self.first_trade_price:,.4f} USDT\n"
-            f"* Last Trade Price: {self.last_trade_price:,.4f} USDT\n"
-            f"* Avg. Weighted Buy Price:  {self.avg_weighted_buy_price:,.4f} USDT\n"
-            f"* Avg. Weighted Sell Price: {self.avg_weighted_sell_price:,.4f} USDT\n\n"
-            f"**Position Analysis:**\n"
-            f"* Largest Long Position Held:  {self.max_long_position:,.6f}\n"
-            f"* Largest Short Position Held: {self.max_short_position:,.6f}\n"
-            f"* Overall Largest Position:    {self.largest_position:,.6f} ({self.position_type})\n\n"
-            f"--- Methods Available ---\n"
-            f" .to_dict(), .to_json(), .to_df()"
-        )
-        return report
-
-    def to_msg_bot_msg(self) -> str:
-        """Creates a nicely formatted string for sending analysis results to a message bot."""
-        report = (
-            f"## Trade Analysis for {self.exchange_symbol} on {self.exchange}\n"
-            f"Analysis from **{self.start_datetime_str} GMT+8** onwards.\n\n"
-            f"**Period Analyzed:**\n"
-            f"- Earliest Trade: {self.earliest_trade_time}\n"
-            f"- Last Trade: {self.last_trade_time}\n\n"
-            f"**Execution & PnL:**\n"
-            f"- **Execution Rate:** {self.exec_rate:.2%}\n"
-            f"- **Simplified PnL:** {self.pnl:,.4f} USDT\n"
-            f"- **Turnover:** {self.turnover:,.4f} USDT\n\n"
-            f"**Trade Summary:**\n"
-            f"- **Buy Trades:** {self.num_buy_trades} (Total Size: {self.total_buy_size:,.6f})\n"
-            f"- **Sell Trades:** {self.num_sell_trades} (Total Size: {self.total_sell_size:,.6f})\n\n"
-            f"**Price Points:**\n"
-            f"- **First Trade Price:** {self.first_trade_price:,.4f} USDT\n"
-            f"- **Last Trade Price:** {self.last_trade_price:,.4f} USDT\n"
-            f"- **Avg. Buy Price:** {self.avg_weighted_buy_price:,.4f} USDT\n"
-            f"- **Avg. Sell Price:** {self.avg_weighted_sell_price:,.4f} USDT\n\n"
-            f"**Position Highlights:**\n"
-            f"- **Max Long Position:** {self.max_long_position:,.6f}\n"
-            f"- **Max Short Position:** {self.max_short_position:,.6f}\n"
-            f"- **Largest Position:** {self.largest_position:,.6f} ({self.position_type})\n"
-        )
-        return report
-
-    def __repr__(self) -> str:
-        """Provides a developer-friendly, compact string representation."""
-        return (
-            f"Results(pnl={self.pnl:.2f}, buys={self.num_buy_trades}, "
-            f"sells={self.num_sell_trades}, largest_pos={self.largest_position:.4f})"
-        )
-
-
 class TradesAnalysis:
     """
     A class to analyze trade data from the database, calculate key metrics, and generate charts.
@@ -189,24 +88,9 @@ class TradesAnalysis:
 
             # --- Data Preparation and Column Mapping ---
             df.rename(columns={
-                OrderInfo.CREATED_AT: TradeData.TIME.value,
-                OrderInfo.SIDE: TradeData.ORDER_SIDE.value,
-                OrderInfo.EXECUTED_SIZE: TradeData.QUANTITY.value,
-                OrderInfo.SYMBOL: TradeData.SYMBOL.value,
-                OrderInfo.PRICE: TradeData.PRICE.value
+                OrderStatsCols.TIMESTAMP: TradeData.TIME.value,
+                OrderStatsCols.GLOBAL_SYMBOL: TradeData.SYMBOL.value,
             }, inplace=True)
-            
-            for to_float_col in [TradeData.QUANTITY.value, TradeData.PRICE.value]:
-                df[to_float_col] = df[to_float_col].astype(str)
-                df[to_float_col] = df[to_float_col].str.replace(',', '').astype(float)
-            
-            df[TradeData.TIME.value] = df[TradeData.TIME.value].astype(int)
-            df[TradeData.ORDER_SIDE.value] = df[TradeData.ORDER_SIDE.value].str.upper()
-            df[TradeData.QUOTE_QTY.value] = df[TradeData.QUANTITY.value] * df[TradeData.PRICE.value]
-            
-            df[TradeData.FEE.value] = 0.0
-            df[TradeData.FEE_CURRENCY.value] = 'USDT'
-            df[TradeData.TAKER_MAKER.value] = 'taker'
 
             gmt8 = timezone(timedelta(hours=8)) # GMT+8 timezone
             df[TradeData.DATETIME.value] = pd.to_datetime(df[TradeData.TIME.value], unit='us', utc=True)
@@ -245,10 +129,31 @@ class TradesAnalysis:
         weighted_avg_buy_price = self._get_weight_price(buy_trades_df)
         weighted_avg_sell_price = self._get_weight_price(sell_trades_df)
 
-        return min(buy_volume, sell_volume) * (weighted_avg_sell_price - weighted_avg_buy_price)
+        return min(buy_volume, sell_volume) * (weighted_avg_sell_price - weighted_avg_buy_price)        
 
-    def run_analysis(self, df: pd.DataFrame, symbol: Optional[str] = None, timestamp: Optional[int] = None, exchange: Optional[ExchangeName] = None, rolling_period: int = 3600000000,
-                    gen_chart:bool=False) -> Tuple[Optional[Results], Optional[pd.DataFrame]]:
+    def calc_longest_no_trades(self, df: pd.DataFrame) -> int:
+        """get the longest no trades time in microsec"""
+        if df.empty:
+            return 0
+        max_no_trade_time = 0
+
+        last_trade_time = None
+        for i,row in df.iterrows():
+            if last_trade_time is None:
+                last_trade_time = row.market_last_trade_timestamp
+                max_no_trade_time = row.market_longest_no_trades_this_period
+                continue
+            # account for cross over period
+            cross_over_period = row.market_first_trade_timestamp - last_trade_time
+
+            max_no_trade_time = max(max_no_trade_time, cross_over_period, row.market_longest_no_trades_this_period)
+
+            last_trade_time = row.market_last_trade_timestamp
+
+        return max_no_trade_time
+
+    def run_analysis(self, df: pd.DataFrame, symbol: Optional[str] = None, timestamp: Optional[int] = None, exchange: Optional[ExchangeName] = None, account_name: Optional[str] = None, strategy_name: Optional[str] = None, rolling_period: int = 3600000000,
+                    gen_chart:bool=False,prev_day_total_pnl:float=0.0) -> Tuple[Optional[Results], Optional[pd.DataFrame]]:
         """
         Runs the full trade analysis and chart generation process on a given DataFrame.
 
@@ -257,6 +162,8 @@ class TradesAnalysis:
             symbol (str, optional): The symbol to filter by. Defaults to None.
             timestamp (int, optional): The start timestamp to filter by (in microseconds). Defaults to None.
             exchange (ExchangeName, optional): The exchange to filter by. Defaults to None.
+            account_name (str, optional): The account name to filter by. Defaults to None.
+            strategy_name (str, optional): The strategy name. Defaults to None.
             rolling_period (int): The rolling period in microseconds. Default is 1 hour.
 
         Returns:
@@ -267,154 +174,204 @@ class TradesAnalysis:
             if df.empty:
                 print("Input DataFrame is empty. Cannot run analysis.")
                 return None, None
-
             self.filtered_trades = df.copy()
 
-            gmt8 = timezone(timedelta(hours=8))
+            # gmt8 = timezone(timedelta(hours=8))
 
-            start_datetime_gmt8 = pd.to_datetime(timestamp, unit='us', utc=True).tz_convert(gmt8) if timestamp else self.filtered_trades[TradeData.DATETIME_GMT8.value].iloc[0]
+            start_datetime_utc = pd.to_datetime(timestamp, unit='us', utc=True) if timestamp else self.filtered_trades[TradeData.DATETIME_GMT8.value].iloc[0]
 
             # --- Calculations ---
+            # general
+            avg_intervals_between_orders = df[TradeData.TIME.value].diff().mean()
+            avg_intervals_between_orders_minutes = avg_intervals_between_orders / 1_000_000 / 60
+
+            # Executions Strategy
             exec_rate = 0.0
-            if df is not None and not df.empty:
-                num_total_orders = len(df)
-                executed_sizes = pd.to_numeric(df[TradeData.QUANTITY.value].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                num_executed_orders = (executed_sizes > 0).sum()
-                if num_total_orders > 0:
-                    exec_rate = num_executed_orders / num_total_orders
+            total_orders_sent = df.num_of_orders_sent.sum()
+            total_notional_value_of_executed_trades = df.total_notional_value_of_executed_trades.sum()
+            total_exec = df.num_of_executed_trades.sum()
+            if total_orders_sent > 0:
+                exec_rate = total_exec / total_orders_sent
 
-            buy_trades = self.filtered_trades[self.filtered_trades[TradeData.ORDER_SIDE.value] == 'BUY']
-            sell_trades = self.filtered_trades[self.filtered_trades[TradeData.ORDER_SIDE.value] == 'SELL']
+            # pnl
+            total_executed_sells_size = df.total_executed_sells_size.sum()
+            total_executed_buys_size = df.total_executed_buys_size.sum()
+
+            total_executed_buys_notional = df.total_executed_buys_notional.sum()
+            total_executed_sells_notional = df.total_executed_sells_notional.sum()
+
+            avg_sell_executed_price = 0.0
+            if total_executed_sells_size > 0:
+                avg_sell_executed_price = total_executed_sells_notional / total_executed_sells_size
+            avg_buy_executed_price = 0.0
+            if total_executed_buys_size > 0:
+                avg_buy_executed_price = total_executed_buys_notional / total_executed_buys_size
+
+            turnover_pnl = min(total_executed_sells_size, total_executed_buys_size) * (avg_sell_executed_price - avg_buy_executed_price)
+            prev_day_total_pnl = prev_day_total_pnl if prev_day_total_pnl else 0.0
+            total_pnl = turnover_pnl + prev_day_total_pnl
+
+            # Executions Rate Per Min
+            avg_market_trades = 0.0
+            exec_freq = 0.0
+            if len(df) > 0 and avg_intervals_between_orders_minutes > 0:
+                avg_market_trades = df.total_num_of_market_trades.sum()/ len(df)/ avg_intervals_between_orders_minutes
+                exec_freq = total_orders_sent / len(df) / avg_intervals_between_orders_minutes
+            total_market_trades_notional = df.total_notional_value_of_market_trades.sum()
+
+            # longest no trades
+            longest_no_market_trades = self.calc_longest_no_trades(df)
+
+            # BBO Strategy
+            avg_bbo_spread_account = df.bbo_spread_account.mean()
+            avg_bbo_spread_market = df.bbo_spread_market.mean()
             
-            executed_buys = (buy_trades[TradeData.QUANTITY.value] > 0).sum()
-            executed_sells = (sell_trades[TradeData.QUANTITY.value] > 0).sum()
+            # liquidity strategy
+            avg_liquidity_near = df.total_liquidity_near.sum()/len(df)
+            avg_liquidity_far = df.total_liquidity_far.sum()/len(df)
+            avg_liquidity_near_notional = df.total_liquidity_near_notional.sum()/len(df)
+            avg_liquidity_far_notional = df.total_liquidity_far_notional.sum()/len(df)
+            avg_num_of_orders_near = df.total_num_orders_near.sum()/len(df)
+            avg_num_of_orders_far = df.total_num_orders_far.sum()/len(df)
+
+            # liquidity market
+            avg_liquidity_near_market = df.total_liquidity_near_market.sum()/len(df)
+            avg_liquidity_far_market = df.total_liquidity_far_market.sum()/len(df)
+            avg_liquidity_near_market_notional = df.total_liquidity_near_notional_market.sum()/len(df)
+            avg_liquidity_far_market_notional = df.total_liquidity_far_notional_market.sum()/len(df)
+            avg_num_of_orders_near_market = df.total_num_orders_near_market.sum()/len(df)
+            avg_num_of_orders_far_market = df.total_num_orders_far_market.sum()/len(df)
             
-            total_buy_size = buy_trades[TradeData.QUANTITY.value].sum()
-            total_sell_size = sell_trades[TradeData.QUANTITY.value].sum()
-            total_buy_quote_qty = buy_trades[TradeData.QUOTE_QTY.value].sum()
-            total_sell_quote_qty = sell_trades[TradeData.QUOTE_QTY.value].sum()
-            avg_weighted_buy_price = total_buy_quote_qty / total_buy_size if total_buy_size > 0 else 0
-            avg_weighted_sell_price = total_sell_quote_qty / total_sell_size if total_sell_size > 0 else 0
-            pnl = (total_sell_quote_qty - (total_sell_size * avg_weighted_buy_price)) + \
-                  ((total_buy_size * avg_weighted_sell_price) - total_buy_quote_qty)
-
-            # --- Position Analysis ---
-            self.filtered_trades[TradeData.SIGNED_QUANTITY.value] = np.where(self.filtered_trades[TradeData.ORDER_SIDE.value] == 'BUY', self.filtered_trades[TradeData.QUANTITY.value], -self.filtered_trades[TradeData.QUANTITY.value])
-            self.filtered_trades[TradeData.NET_POSITION.value] = self.filtered_trades[TradeData.SIGNED_QUANTITY.value].cumsum()
-            max_long_position = self.filtered_trades[TradeData.NET_POSITION.value].max()
-            max_short_position = self.filtered_trades[TradeData.NET_POSITION.value].min()
-            largest_position = max(max_long_position, abs(max_short_position))
-            position_type = "Long" if largest_position == max_long_position else "Short"
-
-            # --- Rolling Analysis ---
-            if rolling_period:
-                self.rolling_stats = RollingStats()
-                start_time = self.filtered_trades[TradeData.TIME.value].iloc[0]
-                end_time = self.filtered_trades[TradeData.TIME.value].iloc[-1]
-
-                if df is not None and not df.empty:
-                    df.sort_values(by=TradeData.TIME.value, inplace=True)
-
-                current_time = start_time
-                cumulative_pnl = 0
-                while current_time < end_time:
-                    period_end_time = current_time + rolling_period
-                    period_df = self.filtered_trades[(self.filtered_trades[TradeData.TIME.value] >= current_time) & (self.filtered_trades[TradeData.TIME.value] < period_end_time)]
-
-                    num_orders_sent_period = 0
-                    period_orders_df = pd.DataFrame()
-                    if df is not None and not df.empty:
-                        period_orders_df = df[(df[TradeData.TIME.value] >= current_time) & (df[TradeData.TIME.value] < period_end_time)]
-                        num_orders_sent_period = len(period_orders_df)
-
-                    exec_rate_period = 0.0
-                    if not period_orders_df.empty:
-                        executed_sizes_period = pd.to_numeric(period_orders_df[TradeData.QUANTITY.value].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                        num_executed_orders_period = (executed_sizes_period > 0).sum()
-                        if num_orders_sent_period > 0:
-                            exec_rate_period = num_executed_orders_period / num_orders_sent_period
-
-                    if not period_df.empty:
-                        buy_trades_period = period_df[period_df[TradeData.ORDER_SIDE.value] == 'BUY']
-                        sell_trades_period = period_df[period_df[TradeData.ORDER_SIDE.value] == 'SELL']
-
-                        turnover_value = self.turnover(buy_trades_period, sell_trades_period)
-
-                        largest_position_period = period_df[TradeData.NET_POSITION.value].max()
-                        smallest_position_period = period_df[TradeData.NET_POSITION.value].min()
-                        cum_size = period_df[TradeData.NET_POSITION.value].iloc[-1]
-
-                        buy_quote_qty_period = buy_trades_period[TradeData.QUOTE_QTY.value].sum()
-                        sell_quote_qty_period = sell_trades_period[TradeData.QUOTE_QTY.value].sum()
-                        pnl_period = sell_quote_qty_period - buy_quote_qty_period
-                        cumulative_pnl += pnl_period
-
-                        avg_weighted_buy_price_period = self._get_weight_price(buy_trades_period)
-                        avg_weighted_sell_price_period = self._get_weight_price(sell_trades_period)
-                        num_buy_trades_period = len(buy_trades_period)
-                        num_sell_trades_period = len(sell_trades_period)
-
-                        lowest_size = period_df[TradeData.QUANTITY.value].min()
-                        largest_size = period_df[TradeData.QUANTITY.value].max()
-                        avg_size = period_df[TradeData.QUANTITY.value].mean()
-
-                        period_timestamp_str = pd.to_datetime(current_time, unit='us').strftime('%Y-%m-%d %H:%M:%S')
-
-                        self.rolling_stats.add_row(
-                            timestamp=period_timestamp_str,
-                            turnover=turnover_value,
-                            largest_position=largest_position_period,
-                            smallest_position=smallest_position_period,
-                            cum_size=cum_size,
-                            PnL=pnl_period,
-                            cumPnl=cumulative_pnl,
-                            avg_weighted_buy_price=avg_weighted_buy_price_period,
-                            avg_weighted_sell_price=avg_weighted_sell_price_period,
-                            num_buy_trades=num_buy_trades_period,
-                            num_sell_trades=num_sell_trades_period,
-                            lowest_size=lowest_size,
-                            largest_size=largest_size,
-                            avg_size=avg_size,
-                            exec_rate=exec_rate_period
-                        )
-
-                    current_time = period_end_time
-            
-            # --- Determine symbol and exchange for results ---
-            exchange_val = exchange.value if exchange else (df['exchange'].iloc[0] if not df.empty and df['exchange'].nunique() == 1 else "Multiple")
+             # --- Determine symbol and exchange for results ---
+            account_name_val = account_name if account_name else (df['account_name'].iloc[0] if not df.empty and df['account_name'].nunique() == 1 else "Multiple")
+            strategy_name_val = strategy_name if strategy_name else "Unknown"
+            date_val = start_datetime_utc.strftime('%Y-%m-%d')
+            exchange_val = exchange if exchange else (df['exchange'].iloc[0] if not df.empty and df['exchange'].nunique() == 1 else "Multiple")
             symbol_val = symbol if symbol else (df[TradeData.SYMBOL.value].iloc[0] if not df.empty and df[TradeData.SYMBOL.value].nunique() == 1 else "Multiple")
+            symbol_type = SymbolType( symbol_val.split('-')[0]).value
 
             # --- Store Results ---
             self.result = Results(
-                start_datetime_str=start_datetime_gmt8.strftime('%Y-%m-%d %H:%M:%S'),
-                earliest_trade_time=self.filtered_trades[TradeData.STR_TIME.value].iloc[0],
-                last_trade_time=self.filtered_trades[TradeData.STR_TIME.value].iloc[-1],
-                first_trade_price=self.filtered_trades[TradeData.PRICE.value].iloc[0],
-                last_trade_price=self.filtered_trades[TradeData.PRICE.value].iloc[-1],
-                pnl=pnl,
-                turnover=turnover_value,
-                executed_buys=executed_buys,
-                executed_sells=executed_sells,
-                num_buy_trades=len(buy_trades),
-                num_sell_trades=len(sell_trades),
-                total_buy_size=total_buy_size,
-                total_sell_size=total_sell_size,
-                avg_weighted_buy_price=avg_weighted_buy_price,
-                avg_weighted_sell_price=avg_weighted_sell_price,
-                max_long_position=max_long_position,
-                max_short_position=max_short_position,
-                largest_position=largest_position,
-                position_type=position_type,
-                exec_rate=exec_rate,
+                id=uuid5(NAMESPACE_ID, f"{account_name_val}{strategy_name_val}{date_val}{symbol_val}{exchange_val}"), # a uuid of combination account_name,strategy_name,date,global_symbol,exchange
+                account_name=account_name_val,
+                strategy_name=strategy_name_val,
+                start_datetime_utc=start_datetime_utc.strftime('%Y-%m-%d %H:%M:%S'),
+                date=date_val,
                 global_symbol=symbol_val,
                 exchange_symbol=symbol_val,
                 exchange=exchange_val,
-                product_type='spot' # Assuming spot, not available in DB data
+                product_type=symbol_type,
+                total_orders_sent=total_orders_sent,
+                total_executed_trades=total_exec,
+                total_notional_value_of_executed_trades=total_notional_value_of_executed_trades,
+                avg_buy_executed_price=avg_buy_executed_price,
+                total_executed_buys_size=total_executed_buys_size,
+                total_executed_buys_notional=total_executed_buys_notional,
+                avg_sell_executed_price=avg_sell_executed_price,
+                total_executed_sells_size=total_executed_sells_size,
+                total_executed_sells_notional=total_executed_sells_notional,
+                exec_rate=exec_rate,
+                exec_freq=exec_freq,
+                today_pnl=turnover_pnl,
+                total_pnl=total_pnl,
+                avg_bbo_spread_account=avg_bbo_spread_account,
+                avg_bbo_spread_market=avg_bbo_spread_market,
+                avg_num_of_orders_near=avg_num_of_orders_near,
+                avg_num_of_orders_far=avg_num_of_orders_far,
+                avg_num_of_orders_near_market=avg_num_of_orders_near_market,
+                avg_num_of_orders_far_market=avg_num_of_orders_far_market,
+                avg_liquidity_near=avg_liquidity_near,
+                avg_liquidity_near_market=avg_liquidity_near_market,
+                avg_liquidity_far=avg_liquidity_far,
+                avg_liquidity_far_market=avg_liquidity_far_market,
+                avg_liquidity_near_notional=avg_liquidity_near_notional,
+                avg_liquidity_near_market_notional=avg_liquidity_near_market_notional,
+                avg_liquidity_far_notional=avg_liquidity_far_notional,
+                avg_liquidity_far_market_notional=avg_liquidity_far_market_notional,
+                avg_intervals_between_orders=avg_intervals_between_orders,
+                avg_market_trades=avg_market_trades,
+                total_market_trades_notional=total_market_trades_notional,
+                longest_no_market_trades=longest_no_market_trades,
             )
 
+            # # --- Rolling Analysis ---
+            # if rolling_period:
+            #     self.rolling_stats = RollingStats()
+            #     start_time = self.filtered_trades[TradeData.TIME.value].iloc[0]
+            #     end_time = self.filtered_trades[TradeData.TIME.value].iloc[-1]
+
+            #     if df is not None and not df.empty:
+            #         df.sort_values(by=TradeData.TIME.value, inplace=True)
+
+            #     current_time = start_time
+            #     cumulative_pnl = 0
+            #     while current_time < end_time:
+            #         period_end_time = current_time + rolling_period
+            #         period_df = self.filtered_trades[(self.filtered_trades[TradeData.TIME.value] >= current_time) & (self.filtered_trades[TradeData.TIME.value] < period_end_time)]
+
+            #         num_orders_sent_period = 0
+            #         period_orders_df = pd.DataFrame()
+            #         if df is not None and not df.empty:
+            #             period_orders_df = df[(df[TradeData.TIME.value] >= current_time) & (df[TradeData.TIME.value] < period_end_time)]
+            #             num_orders_sent_period = len(period_orders_df)
+
+            #         exec_rate_period = 0.0
+            #         if not period_orders_df.empty:
+            #             executed_sizes_period = pd.to_numeric(period_orders_df[TradeData.QUANTITY.value].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+            #             num_executed_orders_period = (executed_sizes_period > 0).sum()
+            #             if num_orders_sent_period > 0:
+            #                 exec_rate_period = num_executed_orders_period / num_orders_sent_period
+
+            #         if not period_df.empty:
+            #             buy_trades_period = period_df[period_df[TradeData.ORDER_SIDE.value] == 'BUY']
+            #             sell_trades_period = period_df[period_df[TradeData.ORDER_SIDE.value] == 'SELL']
+
+            #             turnover_value = self.turnover(buy_trades_period, sell_trades_period)
+
+            #             largest_position_period = period_df[TradeData.NET_POSITION.value].max()
+            #             smallest_position_period = period_df[TradeData.NET_POSITION.value].min()
+            #             cum_size = period_df[TradeData.NET_POSITION.value].iloc[-1]
+
+            #             buy_quote_qty_period = buy_trades_period[TradeData.QUOTE_QTY.value].sum()
+            #             sell_quote_qty_period = sell_trades_period[TradeData.QUOTE_QTY.value].sum()
+            #             pnl_period = sell_quote_qty_period - buy_quote_qty_period
+            #             cumulative_pnl += pnl_period
+
+            #             avg_weighted_buy_price_period = self._get_weight_price(buy_trades_period)
+            #             avg_weighted_sell_price_period = self._get_weight_price(sell_trades_period)
+            #             num_buy_trades_period = len(buy_trades_period)
+            #             num_sell_trades_period = len(sell_trades_period)
+
+            #             lowest_size = period_df[TradeData.QUANTITY.value].min()
+            #             largest_size = period_df[TradeData.QUANTITY.value].max()
+            #             avg_size = period_df[TradeData.QUANTITY.value].mean()
+
+            #             period_timestamp_str = pd.to_datetime(current_time, unit='us').strftime('%Y-%m-%d %H:%M:%S')
+
+            #             self.rolling_stats.add_row(
+            #                 timestamp=period_timestamp_str,
+            #                 turnover=turnover_value,
+            #                 largest_position=largest_position_period,
+            #                 smallest_position=smallest_position_period,
+            #                 cum_size=cum_size,
+            #                 PnL=pnl_period,
+            #                 cumPnl=cumulative_pnl,
+            #                 avg_weighted_buy_price=avg_weighted_buy_price_period,
+            #                 avg_weighted_sell_price=avg_weighted_sell_price_period,
+            #                 num_buy_trades=num_buy_trades_period,
+            #                 num_sell_trades=num_sell_trades_period,
+            #                 lowest_size=lowest_size,
+            #                 largest_size=largest_size,
+            #                 avg_size=avg_size,
+            #                 exec_rate=exec_rate_period
+            #             )
+
+            #         current_time = period_end_time
+            
+           
             # --- Chart Generation ---
-            if gen_chart:
-                self._generate_chart()
+            # if gen_chart:
+            #     self._generate_chart()
             
             return self.result, self.filtered_trades
 

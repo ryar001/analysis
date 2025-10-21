@@ -47,12 +47,14 @@ market_stats:
           exchange: XT_FX
         - symbol: FX-TRUMP/USDT
           exchange: XT_FX
+        - symbol: FX-USDC/USDT
+          exchange: XT_FX
 
   # Logging Configuration: Defines settings for logging.
   log_setting:
     log_level: DEBUG # Minimum logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL).
     log_format: '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s' # Format string for log messages.
-    logwhen: 'D' # When to rotate log files (e.g., 'D' for daily).
+    log_when: 'D' # When to rotate log files (e.g., 'D' for daily).
     log_dir: "./Logs" # Directory for log files.
     log_file: ".log" # Name of the log file.
 
@@ -66,4 +68,49 @@ market_stats:
     msg_type: post
     heartbeat_msg: "Account {symbol}@{exchange} is alive and kicking!"
     warning_msg: "No message received {symbol}@{exchange} for a long time" # msg to send when no msg received for max_no_msg_time
+
+acct_orders_stats:
+  stored_data_table_name: acct_orders_stats
+  to_store_table_name: daily_mm_stats
+
+  strategy_to_acct_mappings:
+      "FX-AS单所做市_Jackson": "xtjamm1"
+      "两腿对冲_Keith": "xtktmm1"
+      "单所做市_Keith2": "xtktmm2"
+      "跨所_Shawn": "xtsharb1"
+
+  markets_mapping:
+    XT_FX:
+      FX-TRUMP/USDT:
+        - FX-AS单所做市_Jackson
+        - 两腿对冲_Keith
+        - 单所做市_Keith2
+        - 跨所_Shawn
+      FX-XRP/USDT:
+        - FX-AS单所做市_Jackson
+        - 两腿对冲_Keith
+        - 单所做市_Keith2
+        - 跨所_Shawn
+      FX-RPL/USDT:
+        - FX-AS单所做市_Jackson
+
+    # Logging Configuration: Defines settings for logging.
+  log_setting:
+    log_level: DEBUG # Minimum logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL).
+    log_format: '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s' # Format string for log messages.
+    log_when: 'D' # When to rotate log files (e.g., 'D' for daily).
+    log_dir: "./Logs" # Directory for log files.
+    log_file: "acct_orders_stats.log" # Name of the log file.
+
+  # msg bot seting, for now using lark, ideally change to MQ or Kafka
+  msg_bot_settings:
+    bot_name: lark
+    chat_id: 480d8947-1ba2-4645-bf42-b0aaea9ef1b0
+    api_name: bot/v2/hook/
+    url: https://open.larksuite.com/open-apis/
+    title: acct_orders_stats {symbol}@{exchange}
+    msg_type: post
+    heartbeat_msg: "acct_orders_stats {symbol}@{exchange} is alive and kicking!"
+    warning_msg: "No message received acct_orders_stats {symbol}@{exchange} for a long time" # msg to send when no msg received for max_no_msg_time
+
 

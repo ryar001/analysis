@@ -31,7 +31,7 @@ def load_df(pull_db_data: PullDBData, symbol: Optional[str] = None, timestamp: O
     """
     try:
         df = pull_db_data.get_orders(
-            symbol=symbol,
+            global_symbol=symbol,
             timestamp=timestamp,
             to_timestamp=to_timestamp,
             exchange=exchange,

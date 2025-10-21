@@ -35,14 +35,16 @@ except ImportError:
         return logger
 
 
-from analysis.trades_analysis import TradesAnalysis, Results
+from analysis.trades_analysis import TradesAnalysis
+from analysis.components.models.order_stats_cols import OrderStatsCols,Results,RESULTS_DB_COL_TYPE_MAPPING,ResultsField
 from analysis.components.pull_db_data import PullDBData
 from common.db_utils_pandas import DbUtils
 from common.constants import ExchangeName
-from order_management_service.Utils.orders_db_const import ORDERS_DB_COL_TYPE_MAPPING
+from store_orders_stats_script.utils.store_stats_const import ORDER_STATS_ACCTS_DB_COL
 from dataclasses import asdict
 import numpy as np
 
+logger = None
 
 def convert_numpy_types(data):
     """
@@ -54,7 +56,6 @@ def convert_numpy_types(data):
     if isinstance(data, (np.float64, np.float32)):
         return float(data)
     return data
-
 
 STRATEGY_STATS_DB_COL_TYPE_MAPPING = {
     'unique_key': 'VARCHAR(255)',
@@ -98,10 +99,10 @@ def get_strategy_stats_db_utils(db_info: Dict[str, Any], table_name: str) -> DbU
         db_port=db_info['port'],
         db_name=db_info.get('dbname', 'Trading'),
         table_name=table_name,
-        primary_key="unique_key",
+        primary_key="id",
         unique_pri_key=True,
         last_update_time_key="timestamp",
-        db_col_type_mapping=STRATEGY_STATS_DB_COL_TYPE_MAPPING
+        db_col_type_mapping=RESULTS_DB_COL_TYPE_MAPPING
     )
 
 async def store_strategy_stats(db_utils: DbUtils, stats_data: dict):
@@ -115,18 +116,22 @@ async def store_strategy_stats(db_utils: DbUtils, stats_data: dict):
         value = stats_data.get(col)
         key_parts.append(str(value) if value is not None else "") 
     
-    unique_key_string = "|".join(key_parts)
-    unique_key = hashlib.md5(unique_key_string.encode()).hexdigest()
-    stats_data["unique_key"] = unique_key
+    # unique_key_string = "|".join(key_parts)
+    # unique_key = hashlib.md5(unique_key_string.encode()).hexdigest()
+    # stats_data["unique_key"] = unique_key
 
     await asyncio.to_thread(db_utils.upsert_order, order_dict=stats_data)
+
+async def pull_from_strategy_stats_db(db_utils: DbUtils, **kwargs) -> pd.DataFrame:
+    """Pulls data from the strategy_stats table."""
+    return await asyncio.to_thread(db_utils.get_table_as_df, **kwargs)
 
 def load_settings(settings_path: str) -> Dict[str, Any]:
     """Loads settings from a YAML file."""
     with open(settings_path, 'r') as f:
         return yaml.safe_load(f)
 
-def get_db_utils(db_info: Dict[str, Any]) -> DbUtils:
+def get_db_utils(db_info: Dict[str, Any],table_name:str) -> DbUtils:
     """Initializes and returns a DbUtils instance."""
     return DbUtils(
         db_user=db_info['user'],
@@ -134,32 +139,34 @@ def get_db_utils(db_info: Dict[str, Any]) -> DbUtils:
         db_host=db_info['host'],
         db_port=db_info['port'],
         db_name=db_info.get('dbname', 'Trading'),
-        table_name="orders_history_prod",
-        primary_key="strategy_order_id",
+        table_name=table_name,
+        primary_key="update_id",
         unique_pri_key=True,
-        db_col_type_mapping=ORDERS_DB_COL_TYPE_MAPPING
+        db_col_type_mapping=ORDER_STATS_ACCTS_DB_COL
     )
 
 async def run_analysis_for_strategy(
-    puller: PullDBData,
+    raw_stats_puller: PullDBData,
+    strategy_db_puller: PullDBData,
     analyzer: TradesAnalysis,
+    account_name: str,
     strategy_name: str,
-    process_name: str,
     from_timestamp: int,
     to_timestamp: int,
     exchange: ExchangeName,
-    symbol: str = None,
+    global_symbol: str = None,
+    **kwargs
 ) -> Tuple[Results,pd.DataFrame]:
     """Runs analysis for a single strategy."""
-    raw_df = puller.get_orders(
+    raw_df = raw_stats_puller.get_orders(
         timestamp=from_timestamp,
         to_timestamp=to_timestamp,
         exchange=exchange,
-        strategy_name=strategy_name,
-        strategy_process_name=process_name,
-        symbol=symbol,
+        account_name=account_name,
+        global_symbol=global_symbol,
         limit=100000  # High limit to get all trades in the last 24h
     )
+    logger.info(f"{account_name}, {strategy_name}, {global_symbol}, {exchange}")
 
     if raw_df is None or raw_df.empty:
         return None,raw_df
@@ -167,15 +174,32 @@ async def run_analysis_for_strategy(
     parsed_df = analyzer.parse_df(raw_df)
     if parsed_df is None or parsed_df.empty:
         return None,parsed_df
-
+    
+    # pull data from db
+    prev_day_df = strategy_db_puller.get_orders(
+        timestamp=from_timestamp-24*60*60*10**6,
+        to_timestamp=to_timestamp-22*60*60*10**6,
+        exchange=exchange,
+        account_name=account_name,
+        global_symbol=global_symbol,
+        limit=100000  # High limit to get all trades in the last 24h
+        )
+    prev_day_total_pnl = 0.0
+    if prev_day_df is not None and not prev_day_df.empty:
+        prev_day_total_pnl = float(prev_day_df[ResultsField.TOTAL_PNL.value].iloc[-1])
+        
     result, filtered_trades = analyzer.run_analysis(
         df=parsed_df,
         timestamp=from_timestamp,
-        exchange=exchange
+        exchange=exchange,
+        account_name=account_name,
+        strategy_name=strategy_name,
+        prev_day_total_pnl=prev_day_total_pnl,
+        **kwargs
     )
     return result,filtered_trades
 
-async def load_strategy_helper_async(conf_fp: str = None, logger=None) -> SymbolHelper:
+async def load_strategy_helper_async(conf_fp: str = None, logger=None) -> StrategyTradingHelper:
     """Loads the strategy helper asynchronously."""
     strategy_helper = StrategyTradingHelper()
     conf_fp = conf_fp or str(Path(Path(__file__).parent.parent, "common", "db.json"))
@@ -185,26 +209,30 @@ async def load_strategy_helper_async(conf_fp: str = None, logger=None) -> Symbol
         print(f"Loading conf: {conf_fp}")
     strategy_helper.options = strategy_helper.load_config(conf_fp)
     await strategy_helper.load_symbol_helper()
-    return strategy_helper.symbol_helper
+    return strategy_helper
 
 async def main():
     """Main function to run the analysis and send reports."""
     settings_path = "./send_to_lark_settings.yaml"
-    
+    final_today_list = []
+
     try:
-        settings = load_settings(settings_path).get("private",{})
+        settings = load_settings(settings_path).get("acct_orders_stats",{})
     except FileNotFoundError:
         print(f"Settings file not found at {settings_path}. Please create it.")
         return
    
     log_setting = settings.get("log_setting", {})
 
-    logger = setup_logger("run_send_analysis_to_msg_bot", log_setting)
+    global logger
+    logger = setup_logger("run_send_analysis_to_msg_bot", log_setting)    
     
     msg_bot_settings = settings.get("msg_bot_settings", {})
-    accounts = settings.get("accounts", {})
+    markets_mapping:dict = settings.get("markets_mapping", {})
+    strategy_to_acct_mappings:dict = settings.get("strategy_to_acct_mappings", {})
+
     logger.info(f"msg_bot_settings: {msg_bot_settings}")
-    if not all([msg_bot_settings, accounts]):
+    if not all([msg_bot_settings, markets_mapping,log_setting]):
         logger.error("Incomplete settings file. Please check the format.")
         return
 
@@ -219,17 +247,12 @@ async def main():
         logger.error(f"db.json not found or configured incorrectly: {e}")
         return
 
-    db_utils = get_db_utils(db_info)
-    db_utils.start()
-    strategy_stats_table_name = settings.get("table_name")
+    raw_stats_db_utils = get_db_utils(db_info, settings.get("stored_data_table_name"))
+    raw_stats_db_utils.start()
+    strategy_stats_table_name = settings.get("to_store_table_name")
     strategy_stats_db_utils = None
     if strategy_stats_table_name:
         strategy_stats_db_utils = get_strategy_stats_db_utils(db_info, strategy_stats_table_name)
-        
-        # --- TEMPORARY CODE TO RECREATE TABLE WITH NEW SCHEMA ---
-        # This will delete the existing 'strategy_stats' table to allow it 
-        # to be recreated with the new 'unique_key' primary key.
-        # This is a one-time operation and this code should be removed after a successful run.
         strategy_stats_db_utils.connect()
 
         # --- END OF TEMPORARY CODE ---
@@ -237,85 +260,99 @@ async def main():
         strategy_stats_db_utils.start()
         logger.info(f"strategy_stats_db_utils started.")
         
-    puller = PullDBData(db_utils)
+    raw_stats_puller = PullDBData(raw_stats_db_utils)
+    strategy_puller = PullDBData(strategy_stats_db_utils)
     analyzer = TradesAnalysis()
     strategy_helper = await load_strategy_helper_async(logger=logger)
+    symbol_helper = strategy_helper.symbol_helper
 
     to_timestamp = int(datetime.now(timezone.utc).timestamp() * 10**6)
     from_timestamp = to_timestamp - int(24 * 60 * 60 * 10**6)
 
-    for account_name, account_details in accounts.items():
-        strategies = account_details.get("strategy_and_process_name", [])
+    grouped_by_glob_sym = {}
+
+    for exchange, symbol_strategy_mappings in markets_mapping.items():
+        try:
+            exchange: ExchangeName = ExchangeName(exchange.upper()).value
+        except ValueError:
+            logger.warning(f"Invalid exchange '{exchange}'. Skipping.")
+            await asyncio.sleep(10)
+            continue
         
-        if not strategies:
-            logger.warning(f"No strategies found for account: {account_name}")
+        if not symbol_strategy_mappings:
+            logger.warning(f"No strategies found for account: {exchange}")
             continue
 
-        account_message = f"{account_name} Strategies\n"
+        account_message = f"{symbol_strategy_mappings} Strategies\n"
         
-        for strategy_info in strategies:
-            strategy_name = strategy_info.get("strategy_name")
-            process_name = strategy_info.get("process_name")
-            global_symbol = strategy_info.get("global_symbol")
-            exchange_str = strategy_info.get("exchange")
-            exchange = ExchangeName(exchange_str.upper()) if exchange_str else None
+        for global_symbol, strategy_list in symbol_strategy_mappings.items():
+            for strategy_name in strategy_list:
 
-            if not strategy_name and not process_name:
-                logger.warning(f"Skipping incomplete strategy info: {strategy_info}")
-                continue
+                stats_dict = {}
 
-            logger.info(f"Running analysis for account '{account_name}', strategy '{strategy_name}'...")
-            
-            exch_symbol = None
+                if not strategy_name:
+                    logger.warning(f"Skipping incomplete strategy info: {strategy_name}")
+                    continue
 
-            if strategy_helper:
-                if global_symbol and exchange and strategy_helper:
-                                symbol_info = strategy_helper.get_info(exchange.value, global_symbol)
-                                if symbol_info:
-                                    exch_symbol = symbol_info.get("exchange_symbol")
-            analysis_result,_filtered_trades = await run_analysis_for_strategy(
-                puller,
-                analyzer,
-                strategy_name,
-                process_name,
-                from_timestamp,
-                to_timestamp,
-                exchange=exchange,
-                symbol=exch_symbol
-            )
+                logger.info(f"Running analysis for account '{global_symbol}', strategy '{strategy_name} on exchange '{exchange}'...")
+                
+                exch_symbol = None
+                try:
+                    if symbol_helper:
+                        if global_symbol and exchange and symbol_helper:
+                            symbol_info = symbol_helper.get_info(exchange, global_symbol)
+                            if symbol_info:
+                                exch_symbol = symbol_info.get("exchange_symbol")
+                except Exception as e:
+                    logger.error(f"Error getting exchange symbol for {global_symbol} on {exchange}: {e}")
+                    await asyncio.sleep(10)
+                    continue
 
-            if not analysis_result:
-                send_message(f"No analysis results for {account_name} - {strategy_name} - {process_name}",account_name=account_name)
-                continue
+                account_name = strategy_to_acct_mappings.get(strategy_name,strategy_name)
+                analysis_result,_filtered_trades = await run_analysis_for_strategy(
+                    raw_stats_puller=raw_stats_puller,
+                    strategy_db_puller=strategy_puller,
+                    analyzer=analyzer,
+                    account_name=account_name,
+                    strategy_name=strategy_name,
+                    from_timestamp=from_timestamp,
+                    to_timestamp=to_timestamp,
+                    exchange=exchange,
+                    global_symbol=global_symbol,
+                )
 
-            if strategy_stats_db_utils and analysis_result:
-                stats_dict = analysis_result.to_dict()
-                stats_dict['timestamp'] = to_timestamp
-                stats_dict['date'] = datetime.fromtimestamp(to_timestamp / 10**6, tz=timezone.utc).strftime('%Y-%m-%d')
-                stats_dict['account_name'] = account_name
-                stats_dict['strategy_name'] = strategy_name
-                stats_dict['process_name'] = process_name
-                stats_dict['global_symbol'] = global_symbol
-                stats_dict['exchange'] = exchange.value if exchange else 'N/A'
-                await store_strategy_stats(strategy_stats_db_utils, stats_dict)
+                if not analysis_result:
+                    send_message(f"No analysis results for {account_name} - {strategy_name}",symbol=global_symbol,exchange=exchange)
+                    continue
 
-            account_message += f"strategy_name: {strategy_name}\n"
-            account_message += f"process_name: {process_name}\n"
-            account_message += f"global_symbol: {global_symbol}\n"
-            account_message += f"exchange: {exchange.value if exchange else 'N/A'}\n\n"
-            
-            if analysis_result:
-                account_message += "Strategy Account Analysis Result:\n"
-                account_message += f"{analysis_result.to_msg_bot_msg()}\n\n"
-            else:
-                account_message += "No analysis results for this strategy in the last 24 hours.\n\n"
+                if strategy_stats_db_utils and analysis_result:
+                    stats_dict = analysis_result.to_db_dict()
+                    await store_strategy_stats(strategy_stats_db_utils, stats_dict)
+
+                final_today_list.append(stats_dict)
+
+                # account_message += f"strategy_name: {strategy_name}\n"
+                # account_message += f"global_symbol: {global_symbol}\n"
+                # account_message += f"exchange: {exchange if exchange else 'N/A'}\n\n"
+
+                if analysis_result:
+
+                    account_message = "Strategy Account Analysis Result:\n"
+                    account_message += f"{analysis_result.to_msg_bot_msg()}\n\n"
+                    send_message(account_message,symbol=global_symbol,exchange=exchange,account_name=account_name)
+                else:
+                    account_message += "No analysis results for this strategy in the last 24 hours.\n\n"
 
         logger.info(f"Sending message for account '{account_name}'")
                 
-        send_message(account_message,account_name=account_name)
+        
 
-    if db_utils:
-        db_utils.close()
+    if final_today_list:
+        today_df = pd.DataFrame(final_today_list)
+        today_df.to_csv("today_df.csv")
+
+    if raw_stats_db_utils:
+        raw_stats_db_utils.close()
 
     if strategy_stats_db_utils:
         strategy_stats_db_utils.close()

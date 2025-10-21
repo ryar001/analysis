@@ -16,21 +16,28 @@ GIT_ROOT=$(git rev-parse --show-toplevel)
 UPDATES_FILE="$GIT_ROOT/UPDATES.md"
 
 # Arguments
-REF=${2:-HEAD}
+DIFF_COMMAND="git diff --staged"
+
+while getopts ":r:" opt; do
+  case ${opt} in
+    r)
+      DIFF_COMMAND="git diff ${OPTARG}..HEAD"
+      ;;
+    ?)
+      echo "Invalid option: -${OPTARG}" >&2
+      echo "Usage: $(basename "$0") [-r <commit-hash>]"
+      exit 1
+      ;;
+    :)
+      echo "Option -${OPTARG} requires an argument." >&2
+      echo "Usage: $(basename "$0") [-r <commit-hash>]"
+      exit 1
+      ;;
+  esac
+done
 
 # Stage all changes
 git add -u
-
-# Determine diff command based on arguments
-if [ "$1" == "update" ]; then
-    DIFF_COMMAND="git diff --staged"
-    if [ "$REF" != "HEAD" ]; then
-        DIFF_COMMAND="git diff $REF..HEAD"
-    fi
-else
-    echo "Usage: ai-tracker update [--ref <commit-hash> | <branch-name>]"
-    exit 1
-fi
 
 # Get the diff output, filtering for non-code changes
 DIFF=$(eval "$DIFF_COMMAND" | grep -E '^(\+\+\+|---|\+|\-|@@)' | grep -v '^[+ ]*$' | grep -v '^-*$')
@@ -44,15 +51,22 @@ fi
 TEMP_MD=$(mktemp)
 
 # Call Gemini to summarize the changes
-gemini --prompt="
-### ROLE & PERSONA ###
-You are an expert technical writer.
+gemini <<'EOF' > "$TEMP_MD"
+You are an expert technical writer and code reviewer.
 
 ### CONTEXT ###
-The user has provided a git diff output. Your task is to analyze the changes and generate a summary suitable for a project update log.
+The user has provided a git diff output. Your task is to analyze the changes for errors, breakpoints, and then generate a summary suitable for a project update log.
 
 ### PRIMARY TASK ###
-Summarize and categorize the changes from the git diff. Use a category for each change (e.g., 'What's New', 'Bugfix', 'Refactor'). The output must be valid markdown following the exact structure shown in the example.
+1.  **Review for errors and breakpoints**:
+    - Check for obvious errors in the code (e.g., syntax errors). If you find any, output ONLY a description of the error and the file it is in, prefixed with "ERROR: ".
+    - Check for breakpoints (e.g., `pdb.set_trace()`, `breakpoint()`). If you find any, you will mention it later.
+
+2.  **Summarize and categorize changes**:
+    - If no errors are found, summarize and categorize the changes from the git diff.
+    - Use a category for each change (e.g., 'What's New', 'Bugfix', 'Refactor').
+    - If you found breakpoints, add a 'Warnings' section at the top of your summary, listing the files containing breakpoints.
+    - The output must be valid markdown following the exact structure shown in the example.
 
 ### SPECIFICATIONS & INSTRUCTIONS ###
 - Group changes by category, then by file.
@@ -60,36 +74,54 @@ Summarize and categorize the changes from the git diff. Use a category for each 
 - Do not include any conversational text outside the formatted summary.
 - The most recent update must be placed at the top of the file.
 
-### EXAMPLE FORMAT ###
+### EXAMPLE FORMAT (with warning) ###
+## $(date '+%Y-%m-%d')
+
+### Warnings
+- Breakpoint found in `src/utils/debugger.js`.
+
+### What's New
+...
+
+### EXAMPLE FORMAT (no warning) ###
 ## $(date '+%Y-%m-%d')
 
 ### What's New
 
-#### \`src/features/auth.js\`
+#### `src/features/auth.js`
 
 - Implemented the core logic for the new user authentication flow.
 - Added a new component for the login form.
 
 ### Bugfix
 
-#### \`src/components/Header.js\`
+#### `src/components/Header.js`
 
 - Fixed a layout issue where the logo would overlap navigation links on smaller screens.
 
 ### OUTPUT FORMAT & CONSTRAINTS ###
-- Provide your response exclusively as the raw text of the summary.
+- If errors are found, output ONLY the error description (e.g., "ERROR: Syntax error in main.py").
+- Otherwise, provide your response exclusively as the raw text of the summary.
 - DO NOT include any explanations or introductory sentences.
 - The current date is $(date '+%Y-%m-%d').
 
 Act autonomously. Do not ask for clarification. Begin analysis immediately when invoked.
 
 ${DIFF}
-" > "$TEMP_MD"
+EOF
+
+# Check for errors reported by Gemini
+if grep -q "^ERROR:" "$TEMP_MD"; then
+    cat "$TEMP_MD"
+    rm "$TEMP_MD"
+    echo "Errors found by AI. Aborting update."
+    exit 1
+fi
 
 # Prepend the new content to UPDATES.md
 if [ -f "$UPDATES_FILE" ]; then
     CURRENT_CONTENT=$(cat "$UPDATES_FILE")
-    echo -e "$(cat \"$TEMP_MD\")\n\n${CURRENT_CONTENT}" > "$UPDATES_FILE"
+    echo -e "$(cat "$TEMP_MD")\n\n${CURRENT_CONTENT}" > "$UPDATES_FILE"
 else
     cat "$TEMP_MD" > "$UPDATES_FILE"
 fi
@@ -101,7 +133,7 @@ rm "$TEMP_MD"
 git add "$UPDATES_FILE"
 
 # Generate commit message and commit
-COMMIT_MSG=$(gemini --prompt="
+COMMIT_MSG=$(gemini <<'EOF'
 ### ROLE & PERSONA ###
 You are an expert at generating git commit messages.
 
@@ -127,7 +159,8 @@ This commit adds a new user authentication flow using OAuth 2.0.
 Act autonomously. Do not ask for clarification. Begin analysis immediately when invoked.
 
 ${DIFF}
-")
+EOF
+)
 
 git commit -m "$COMMIT_MSG"
 
